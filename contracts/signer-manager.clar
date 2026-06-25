@@ -143,6 +143,7 @@
                     )
                     ERR_INVALID_CALLDATA
                 )))
+                (try! (check-pox-addr (get pox-addr pox-addr)))
                 (map-set pox-addrs staker pox-addr)
                 true
             )
@@ -234,16 +235,6 @@
             (earned (- gross fees))
         )
         (asserts! (> earned u0) ERR_NO_CLAIMABLE_REWARDS)
-        (asserts!
-            (>
-                (unwrap-panic (contract-call?
-                    'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token
-                    get-balance current-contract
-                ))
-                u0
-            )
-            ERR_NO_CLAIMABLE_REWARDS
-        )
         (var-set earned-fees (+ prev-fees fees))
         ;; This staker's share is being distributed now so release it from
         ;; the unclaimed count recorded when `claim-rewards` pulled it in.
@@ -349,6 +340,7 @@
             request-id: request-id,
             staker: staker,
             amount-sats: refund,
+            liability-released: refund,
         })
         (as-contract?
             ((with-ft 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token
