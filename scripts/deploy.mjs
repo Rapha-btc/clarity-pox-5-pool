@@ -4,16 +4,20 @@
 // Stacks chain id (256). Clarinet hard-codes testnet = 2147483648 and exposes no
 // chain-id override, so we sign + broadcast with @stacks/transactions instead.
 //
-// Publishes, under the deployer and in order:
-//   1. [[project.requirements]] — fetched-from-mainnet contracts (e.g. the
-//      SIP-010 trait) that aren't on this node. Each is republished under the
-//      deployer and its mainnet principal is remapped to the deployer in every
-//      contract that references it (exactly what `clarinet deployments apply`
-//      does). Source comes from .cache/requirements/<id>.clar.
-//   2. [contracts.*] — this project's contracts (name, path, clarity_version).
-// Idempotent: contracts already on the node are skipped (handy across the node's
-// daily resets). pox-5 (boot) and sBTC are neither requirements nor [contracts],
-// so they're never published here (resolved live on the node).
+// The contracts reference MAINNET principals so the simnet tests can resolve them
+// (canonical boot pox-5 at SP000…, mainnet sBTC at SM3VDXK3…, the SIP-010 trait at
+// SP3FBR2…). On the node those live at DIFFERENT addresses, so at deploy time we
+// rewrite the source:
+//   - boot pox-5   SP000000000000000000002Q6VF78 -> ST000000000000000000002AMW42H
+//   - sBTC suite   SM3VDXK3…                      -> SN3R84… (the node's sBTC)
+//     Both already exist on the node, so they are REMAPPED only (never published).
+//   - SIP-010 trait SP3FBR2…  is NOT on the node, so it is republished under the
+//     deployer and its principal remapped to the deployer (as `clarinet
+//     deployments apply` would). Source comes from .cache/requirements/<id>.clar.
+//
+// Publishes, under the deployer and in order: the republished requirements (just
+// the SIP-010 trait), then [contracts.*] (this project's contracts). Idempotent:
+// contracts already on the node are skipped (handy across the node's daily resets).
 //
 // Deployer key resolved from DEPLOYER_KEY (hex), DEPLOYER_MNEMONIC, or the
 // mnemonic in settings/Testnet.toml (see scripts/_wallet.mjs).
@@ -76,20 +80,33 @@ function parseContracts() {
   return out;
 }
 
-// Build the ordered publish list: requirements (remapped under the deployer)
-// first, then local contracts (with requirement principals remapped).
+// Mainnet principals the contracts reference (for simnet/tests) that already
+// exist on the node under a DIFFERENT address: remapped in source, never
+// republished. (boot pox-5 mainnet->testnet; mainnet sBTC -> the node's sBTC.)
+const NODE_REMAP = {
+  SP000000000000000000002Q6VF78: 'ST000000000000000000002AMW42H',
+  SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4: 'SN3R84XZYA63QS28932XQF3G1J8R9PC3W76P9CSQS',
+};
+
+// Build the ordered publish list: republished requirements first (only those the
+// node lacks, e.g. the SIP-010 trait), then local contracts. All sources are
+// rewritten: NODE_REMAP principals point at their on-node address, and any
+// republished requirement's principal points at the deployer.
 function buildUnits() {
-  const remap = {}; // mainnet principal -> deployer
-  const reqUnits = parseRequirements().map((id) => {
+  const remap = { ...NODE_REMAP }; // principal -> on-node (or deployer) address
+  const reqUnits = [];
+  for (const id of parseRequirements()) {
     const [principal, name] = id.split('.');
+    // sBTC & co. already live on the node (via NODE_REMAP) — remap only, skip.
+    if (NODE_REMAP[principal]) continue;
     remap[principal] = deployer;
     const meta = JSON.parse(readFileSync(`.cache/requirements/${id}.json`, 'utf8'));
-    return {
+    reqUnits.push({
       name,
       source: readFileSync(`.cache/requirements/${id}.clar`, 'utf8'),
       clarityVersion: Number(String(meta.clarity_version).replace(/\D/g, '')) || 1,
-    };
-  });
+    });
+  }
   const applyRemap = (src) =>
     Object.entries(remap).reduce((s, [from, to]) => s.split(from).join(to), src);
   const localUnits = parseContracts().map((c) => ({

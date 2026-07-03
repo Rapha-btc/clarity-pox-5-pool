@@ -14,35 +14,38 @@ contract_id = "SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-withdrawal"
 [[project.requirements]]
 contract_id = "SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard"
 
-[contracts.pox-5]
-path = "../../contracts/pox-5.clar"
-clarity_version = 5
-epoch = "3.4"
+# Canonical pox-5 is injected as the boot contract (same as the main manifest),
+# so the contracts resolve 'SP000…pox-5 in simnet -- there is no local pox-5
+# contract to publish. The contracts are Clarity 6 / epoch 4.0 (they use the
+# SIP-044 `with-staking`/`with-pox` allowances), so every unit below matches.
+[project.override_boot_contracts_source]
+pox-5 = "../../boot/pox-5.clar"
+
 [contracts.signer-manager-1]
 path = "../../contracts/signer-manager.clar"
-clarity_version = 5
-epoch = "3.4"
+clarity_version = 6
+epoch = "4.0"
 [contracts.signer-manager-2]
 path = "../../contracts/signer-manager.clar"
-clarity_version = 5
-epoch = "3.4"
+clarity_version = 6
+epoch = "4.0"
 [contracts.vault-trait]
 path = "../../contracts/vault-trait.clar"
-clarity_version = 5
-epoch = "3.4"
+clarity_version = 6
+epoch = "4.0"
 [contracts.vault-1]
 path = "../../contracts/vault.clar"
-clarity_version = 5
-epoch = "3.4"
+clarity_version = 6
+epoch = "4.0"
 [contracts.vault-2]
 path = "../../contracts/vault.clar"
-clarity_version = 5
-epoch = "3.4"
+clarity_version = 6
+epoch = "4.0"
 [contracts.pool]
 path = "../../contracts/pool.clar"
-clarity_version = 5
-epoch = "3.4"
+clarity_version = 6
+epoch = "4.0"
 [contracts.rv-bootstrap]
 path = "rv-bootstrap.clar"
-clarity_version = 5
-epoch = "3.4"
+clarity_version = 6
+epoch = "4.0"
