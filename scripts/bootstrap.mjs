@@ -12,6 +12,7 @@
 //   node scripts/bootstrap.mjs deposit         # pool.deposit (needs sBTC + STX on the depositor)
 //   node scripts/bootstrap.mjs register-cohort # pool.register-cohort (needs an allowlisted bond)
 //   node scripts/bootstrap.mjs bond-info       # read-only: bond params + the vault's allowlist entry
+//   node scripts/bootstrap.mjs pending-rewards # read-only: per-cycle unclaimed sBTC (signer + staker)
 //   REWARD_CYCLE=<n> node scripts/bootstrap.mjs claim-rewards         # signer pulls its sBTC for the cycle
 //   REWARD_CYCLE=<n> node scripts/bootstrap.mjs claim-staker-rewards  # pay the vault its share
 //   AMOUNT_SATS=<n>  node scripts/bootstrap.mjs fold-rewards          # record sBTC into the redemption rate
@@ -264,12 +265,48 @@ async function bondInfo() {
   console.log(`  collateral for ${sats} sats: min ${minUstx} uSTX (${Number(minUstx) / 1e6} STX)`);
 }
 
+// Read-only: for the pair's vault, list per-cycle sBTC earned-but-unclaimed
+// (signer-level via get-earned, staker-level via get-earned-staker-rewards)
+// from the vault's first-reward-cycle through the current (possibly still
+// in-progress) cycle. No tx sent -- use this before claim-rewards /
+// claim-staker-rewards to know which REWARD_CYCLE values actually have
+// something to claim, and with which BOND_PERIODS / BOND_INDEX.
+async function pendingRewards() {
+  const p = pickPair();
+  const vault = `${deployer}.${p.vault}`;
+  const signer = `${deployer}.${p.sm}`;
+
+  const membership = await callRead('get-bond-membership', [Cl.principal(vault)]);
+  if (membership === null) { console.log(`${p.vault}: not bonded (get-bond-membership -> none)`); return; }
+  const bondIndex = BigInt(membership.value['bond-index'].value);
+  const firstRewardCycle = BigInt(await callRead('bond-period-to-reward-cycle', [Cl.uint(bondIndex)]));
+  const currentCycle = BigInt(await callRead('current-pox-reward-cycle', []));
+
+  console.log(`${p.vault} bond ${bondIndex} (signer ${p.sm}): first-reward-cycle ${firstRewardCycle}, current cycle ${currentCycle}`);
+  let totalSigner = 0n;
+  let totalStaker = 0n;
+  for (let cycle = firstRewardCycle; cycle <= currentCycle; cycle++) {
+    const bondIndexOpt = Cl.some(Cl.uint(bondIndex));
+    const signerEarned = BigInt(await callRead('get-earned', [Cl.principal(signer), Cl.uint(cycle), bondIndexOpt]));
+    const stakerEarned = BigInt(await callRead('get-earned-staker-rewards', [Cl.principal(signer), Cl.uint(cycle), bondIndexOpt, Cl.principal(vault)]));
+    const tag = cycle < currentCycle ? 'complete' : 'IN PROGRESS';
+    console.log(`  cycle ${cycle} (${tag}): signer ${signerEarned} sats, staker ${stakerEarned} sats`);
+    totalSigner += signerEarned;
+    totalStaker += stakerEarned;
+  }
+  console.log(`  TOTAL unclaimed: signer ${totalSigner} sats, staker ${totalStaker} sats`);
+  if (totalSigner > 0n) {
+    console.log(`  claim with: SM=${process.env.SM ?? '1'} BOND_PERIODS=${bondIndex} REWARD_CYCLE=<cycle> node scripts/bootstrap.mjs claim-rewards`);
+    console.log(`          then SM=${process.env.SM ?? '1'} BOND_INDEX=${bondIndex} REWARD_CYCLE=<cycle> node scripts/bootstrap.mjs claim-staker-rewards`);
+  }
+}
+
 const cmd = process.argv[2];
 const cmds = {
   register, bind, list, 'fund-sbtc': fundSbtc, 'fund-staker': fundStx, deposit, 'register-cohort': registerCohort,
   'claim-rewards': claimRewards, 'claim-staker-rewards': claimStakerRewards,
   'fold-rewards': foldRewards, 'unstake-cohort': unstakeCohort, withdraw,
-  'bond-info': bondInfo,
+  'bond-info': bondInfo, 'pending-rewards': pendingRewards,
 };
 if (cmds[cmd]) { console.log(`operator/deployer ${deployer} | chain ${CHAIN_ID}`); await cmds[cmd](); }
 else { console.error(`usage: node scripts/bootstrap.mjs <${Object.keys(cmds).join('|')}>`); process.exit(1); }
